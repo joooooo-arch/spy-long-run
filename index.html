@@ -37,7 +37,9 @@ details summary{cursor:pointer;color:var(--mu);font-size:13.5px;margin-top:10px}
 </style>
 </head>
 <body>
-<div class="top"><h1>📈 SPY Long Run</h1><button id="reload">↻</button></div>
+<div class="top"><h1>📈 SPY Long Run</h1><span><button id="install" hidden>📲 앱 설치</button> <button id="reload">↻</button></span></div>
+<div id="installHelp" class="card mu" hidden>설치 버튼이 안 뜨면: 크롬 오른쪽 위 <b>⋮</b> → <b>홈 화면에 추가</b> → <b>설치</b>
+  (삼성 인터넷은 아래 메뉴 → 현재 페이지 추가 → 홈 화면). 설치하면 아이콘을 눌러 앱처럼 열림</div>
 <div id="meta" class="mu" style="margin:4px 2px 0"></div>
 <div id="app"><div class="card mu">불러오는 중…</div></div>
 
@@ -109,7 +111,7 @@ function render() {
     <div class="card" style="border-left:6px solid ${col}">
       <div class="mu">이번 주 · ${basis}</div>
       <div class="big" style="color:${col}">${changed ? "🔔 이번 주 바꿈" : "✅ 이번 주 그대로 — 주문 없음"}</div>
-      <div>목표 <b>${pc(s.level)}</b> (지금 ${pc(s.held)}) · 위험 신호 ${s.n}개 · 쉬는 돈 ${s.idle ? "IEF" : "현금"}</div>
+      <div>${s.strategy || "공격형"} 목표 <b>${pc(s.level)}</b> (지금 ${pc(s.held)}) · 위험 신호 ${s.n}개 · 쉬는 돈 ${s.idle ? "IEF" : "현금"}</div>
       ${changed ? `<div style="margin-top:4px">${fa(s.alloc_old)} → <b>${fa(s.alloc_new)}</b></div>` : `<div class="mu">${fa(s.alloc_new)}</div>`}
     </div>
     <div class="card">
@@ -121,7 +123,11 @@ function render() {
     </div>`;
   $("sig").innerHTML = s.signals.map(g => `<div class="row"><span>${g.name} <span class="mu">${g.text}</span></span>
       <span style="color:${g.risk ? "var(--r)" : "var(--g)"};font-weight:600">${g.risk ? "위험" : "정상"}</span></div>`).join("")
-    + `<div class="mu" style="margin-top:6px">위험 0개 150% (SPY 50 + SSO 50) · 1개 50% · 2개 이상 0%</div>`;
+    + (s.ladder ? `<div class="row"><span>바닥 사다리 <span class="mu">주봉 RSI ${s.ladder.wrsi.toFixed(0)}${s.ladder.spike_recent ? " · 최근 투매" : ""}</span></span>
+      <span style="color:${s.ladder.on ? "var(--b)" : "var(--mu)"};font-weight:600">${s.ladder.on ? s.ladder.why : "꺼짐"}</span></div>` : "")
+    + `<div class="mu" style="margin-top:6px">위험 0개 150% (SPY 50 + SSO 50) · 1개 50% · 2개 이상 0%`
+    + (s.ladder ? `<br>리바운드형 = 이것과 바닥 사다리 중 큰 쪽. 사다리: 주봉 RSI ${s.ladder.rsi_th} 미만 + 최근 투매 거래량이면 켜짐 → 50% · 20일선 위 100% · 100일선 위 150%` +
+       (s.agg !== undefined && s.agg !== s.level ? ` (공격형만이면 ${pc(s.agg)})` : "") : "") + `</div>`;
   $("up").textContent = s.upcoming.length ? "앞으로 일정이 다른 주: " + s.upcoming.map(w =>
     `${day(w.exec)} 주문` + (w.early ? " (13:00 조기 폐장)" : ` · 신호 ${day(w.signal)}`)).join(" · ") : "";
   const age = (Date.now() - new Date(s.generated)) / 36e5;
@@ -186,6 +192,13 @@ if (["h_tiger", "h_spy", "h_sso", "h_ief"].some(id => $(id).value)) $("hold").op
 $("reload").onclick = load;
 load();
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+// 설치 버튼: 크롬이 설치할 수 있다고 알려 주면 버튼을 보임 · 이미 앱으로 열었으면 숨김 · 안 알려 주면 메뉴로 설치하는 방법을 보임
+const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+let deferred = null;
+addEventListener("beforeinstallprompt", e => { e.preventDefault(); deferred = e; $("install").hidden = false; $("installHelp").hidden = true; });
+addEventListener("appinstalled", () => { $("install").hidden = true; $("installHelp").hidden = true; });
+$("install").onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $("install").hidden = true; };
+if (!standalone) setTimeout(() => { if (!deferred) $("installHelp").hidden = false; }, 2500);
 </script>
 </body>
 </html>

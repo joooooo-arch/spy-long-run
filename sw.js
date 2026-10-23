@@ -1,5 +1,5 @@
 // SPY Long Run 앱 — 설치(홈 화면)와 오프라인용. 화면 파일은 저장해 두고, status.json 은 항상 새로 받음 (안 되면 화면이 마지막 것을 씀).
-const CACHE = "slr-v1";
+const CACHE = "slr-v2";
 const SHELL = ["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", e => {
