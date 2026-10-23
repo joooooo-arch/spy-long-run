@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SPY Long Run</title>
+<meta name="theme-color" content="#0f1115">
+<meta name="robots" content="noindex, nofollow">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<!-- SPY Long Run 핸드폰 앱 (2026-10-23) — 계산은 GitHub Actions(spy_status.py)가 평일마다 해서 status.json 으로 올림.
+     이 화면은 보기 + 계좌별 주문 수량 계산만. 입력한 평가금액·보유 수량은 이 핸드폰(localStorage)에만 저장. -->
+<style>
+:root{--bg:#0f1115;--card:#171a21;--line:rgba(148,163,184,.18);--fg:#e5e7eb;--mu:#94a3b8;--g:#22c55e;--y:#f59e0b;--r:#ef4444;--b:#60a5fa}
+@media (prefers-color-scheme: light){:root{--bg:#f6f7f9;--card:#fff;--line:rgba(15,23,42,.1);--fg:#111827;--mu:#6b7280;--g:#16a34a;--y:#d97706;--r:#dc2626;--b:#2563eb}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 -apple-system,"Noto Sans KR","Malgun Gothic",sans-serif;
+  padding:max(14px,env(safe-area-inset-top)) 14px 40px;-webkit-text-size-adjust:100%}
+h1{font-size:20px;margin:0}
+h2{font-size:15px;margin:20px 2px 6px;color:var(--mu);font-weight:600}
+.top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+button{background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:7px 12px;font:inherit}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin:8px 0}
+.mu{color:var(--mu);font-size:13px}
+.big{font-size:21px;font-weight:700;margin:2px 0}
+.row{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:none}
+.row .k{color:var(--mu);font-size:13.5px;flex:0 0 74px}
+.row .v{text-align:right}
+.ord{font-weight:700}
+label{display:block;font-size:13px;color:var(--mu);margin:8px 0 3px}
+input{width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:10px;font:inherit;font-size:16px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}
+details summary{cursor:pointer;color:var(--mu);font-size:13.5px;margin-top:10px}
+.warn{color:var(--y);font-size:13.5px;margin-top:4px}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+</style>
+</head>
+<body>
+<div class="top"><h1>📈 SPY Long Run</h1><button id="reload">↻</button></div>
+<div id="meta" class="mu" style="margin:4px 2px 0"></div>
+<div id="app"><div class="card mu">불러오는 중…</div></div>
+
+<h2>주문 수량</h2>
+<div class="card">
+  <div class="grid">
+    <div><label for="isa">ISA 평가금액 (원)</label><input id="isa" inputmode="numeric" placeholder="예: 20000000"></div>
+    <div><label for="us">미국 계좌 평가금액 ($)</label><input id="us" inputmode="decimal" placeholder="예: 30000"></div>
+  </div>
+  <details id="hold"><summary>지금 보유 수량 (넣으면 사고팔 수량까지)</summary>
+    <div class="grid">
+      <div><label for="h_tiger">ISA TIGER (주)</label><input id="h_tiger" inputmode="numeric"></div>
+      <div><label for="h_spy">SPY (주)</label><input id="h_spy" inputmode="numeric"></div>
+      <div><label for="h_sso">SSO (주)</label><input id="h_sso" inputmode="numeric"></div>
+      <div><label for="h_ief">IEF (주)</label><input id="h_ief" inputmode="numeric"></div>
+    </div>
+  </details>
+  <div id="qty" style="margin-top:10px"></div>
+  <div class="mu" style="margin-top:8px">입력한 값은 이 핸드폰에만 저장됩니다</div>
+</div>
+
+<h2>신호</h2>
+<div id="sig" class="card mu">–</div>
+<div id="up" class="mu" style="margin:6px 2px"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const WD = "일월화수목금토";
+const IN = ["isa", "us", "h_tiger", "h_spy", "h_sso", "h_ief"];
+let S = null;
+
+// 날짜: "2026-10-23T00:00:00" (뉴욕 날짜) · 시각: "+09:00" 붙은 한국 시각
+const day = s => { const [y, m, d] = s.slice(0, 10).split("-").map(Number); const t = new Date(y, m - 1, d);
+  return `${m}/${d}(${WD[t.getDay()]})`; };
+const kst = s => { const t = new Date(s); const p = Object.fromEntries(new Intl.DateTimeFormat("ko-KR", {timeZone: "Asia/Seoul",
+  month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23"}).formatToParts(t).map(x => [x.type, x.value]));
+  return `${p.month}/${p.day}(${p.weekday}) ${p.hour}:${p.minute}`; };
+const pc = v => `${Math.round(v * 100)}%`;
+const fa = a => Object.entries(a).map(([k, v]) => `${k} ${pc(v)}`).join(" + ");
+const usd = (v, d = 0) => "$" + v.toLocaleString("en-US", {minimumFractionDigits: d, maximumFractionDigits: d});
+const won = v => "₩" + Math.round(v).toLocaleString("ko-KR");
+const num = id => { const v = parseFloat(($(id).value || "").replace(/,/g, "")); return isFinite(v) && v > 0 ? v : 0; };
+
+// spy_model.split_accounts 와 같은 계산 — ISA 는 1배만 · 2배(SSO)는 전부 미국 계좌 · ISA 한도 넘는 1배는 미국 SPY
+function split(level, idle, isa, us) {
+  const total = isa + us, need = level * total;
+  const isaEq = level <= 0 ? 0 : Math.min(isa, need);
+  const rem = Math.max(need - isaEq, 0);
+  let spy = 0, sso = 0;
+  if (rem > 0 && us > 0) {
+    if (level >= 1.5 && rem > us) { sso = Math.min(rem - us, us); spy = Math.max(us - sso, 0); }
+    else spy = Math.min(rem, us);
+  }
+  const got = isaEq + spy + 2 * sso;
+  return {isaEq, isaRest: isa - isaEq, spy, sso, usIdle: us - spy - sso, idleKind: idle ? "IEF" : "현금",
+          short: total ? Math.max(need - got, 0) / total : 0, total};
+}
+
+function render() {
+  const s = S;
+  const changed = JSON.stringify(s.alloc_new) !== JSON.stringify(s.alloc_old);
+  const col = changed ? "var(--y)" : "var(--g)";
+  const basis = s.status === "확정" ? `${day(s.signal)} 미국 종가로 확정`
+    : `<span style="color:var(--y)">예상</span> — ${day(s.data_last)} 종가 기준 (신호일 ${day(s.signal)} 종가 전)`;
+  const notes = [];
+  if (s.early) notes.push(`${day(s.exec)} 13:00 조기 폐장`);
+  if (s.skipped.length) notes.push("이번 주 휴장: " + s.skipped.map(day).join(", "));
+  $("app").innerHTML = `
+    <div class="card" style="border-left:6px solid ${col}">
+      <div class="mu">이번 주 · ${basis}</div>
+      <div class="big" style="color:${col}">${changed ? "🔔 이번 주 바꿈" : "✅ 이번 주 그대로 — 주문 없음"}</div>
+      <div>목표 <b>${pc(s.level)}</b> (지금 ${pc(s.held)}) · 위험 신호 ${s.n}개 · 쉬는 돈 ${s.idle ? "IEF" : "현금"}</div>
+      ${changed ? `<div style="margin-top:4px">${fa(s.alloc_old)} → <b>${fa(s.alloc_new)}</b></div>` : `<div class="mu">${fa(s.alloc_new)}</div>`}
+    </div>
+    <div class="card">
+      <div class="row"><span class="k">ISA</span><span class="v"><b>${day(s.exec)} 한국 장중</b> 09:00~15:30<div class="mu">${s.isa_etf.name} (${s.isa_etf.code})</div></span></div>
+      <div class="row"><span class="k">미국 계좌</span><span class="v"><b>${kst(s.open_kst)}</b> 장 시작 전 <b>LOC</b><div class="mu">접수 마감 ${kst(s.cut_kst)} 전</div></span></div>
+      <div class="row"><span class="k">체결</span><span class="v">${day(s.exec)} 미국 장 마감 가격<div class="mu">한국 ${kst(s.close_kst)}</div></span></div>
+      ${notes.map(x => `<div class="warn">⚠ ${x}</div>`).join("")}
+      <div class="mu" style="margin-top:6px">LOC 가격: 살 때 지금가 +10% · 팔 때 −10% 로 넉넉히 → 그날 종가에 체결</div>
+    </div>`;
+  $("sig").innerHTML = s.signals.map(g => `<div class="row"><span>${g.name} <span class="mu">${g.text}</span></span>
+      <span style="color:${g.risk ? "var(--r)" : "var(--g)"};font-weight:600">${g.risk ? "위험" : "정상"}</span></div>`).join("")
+    + `<div class="mu" style="margin-top:6px">위험 0개 150% (SPY 50 + SSO 50) · 1개 50% · 2개 이상 0%</div>`;
+  $("up").textContent = s.upcoming.length ? "앞으로 일정이 다른 주: " + s.upcoming.map(w =>
+    `${day(w.exec)} 주문` + (w.early ? " (13:00 조기 폐장)" : ` · 신호 ${day(w.signal)}`)).join(" · ") : "";
+  const age = (Date.now() - new Date(s.generated)) / 36e5;
+  $("meta").innerHTML = `계산 ${kst(s.generated)}` + (age > 72 ? ` <span style="color:var(--y)">· ⚠ ${Math.floor(age / 24)}일 전 것</span>` : "");
+  calc();
+}
+
+function calc() {
+  IN.forEach(id => { try { localStorage.setItem("slr_" + id, $(id).value); } catch (e) {} });
+  if (!S) return;
+  const isa = num("isa"), us = num("us"), p = S.prices;
+  if (!isa && !us) { $("qty").innerHTML = `<div class="mu">평가금액을 넣으면 계좌별 목표 수량이 나옵니다</div>`; return; }
+  if (!p.KRW || !p.TIGER) { $("qty").innerHTML = `<div class="warn">환율·TIGER 가격이 없습니다 (다음 계산 때 다시)</div>`; return; }
+  const r = split(S.level, S.idle, isa / p.KRW, us);
+  const want = {tiger: Math.floor(r.isaEq * p.KRW / p.TIGER), spy: p.SPY ? Math.floor(r.spy / p.SPY) : 0,
+                sso: p.SSO ? Math.floor(r.sso / p.SSO) : 0, ief: r.idleKind === "IEF" && p.IEF ? Math.floor(r.usIdle / p.IEF) : 0};
+  const have = {tiger: num("h_tiger"), spy: num("h_spy"), sso: num("h_sso"), ief: num("h_ief")};
+  const price = {tiger: p.TIGER, spy: p.SPY, sso: p.SSO, ief: p.IEF};
+  const names = {tiger: `ISA · ${S.isa_etf.name}`, spy: "미국 · SPY", sso: "미국 · SSO (2배)", ief: "미국 · IEF"};
+  const known = Object.values(have).some(v => v > 0);
+  const rows = [];
+  for (const k of ["tiger", "spy", "sso", "ief"]) {
+    if (!want[k] && !have[k]) continue;
+    const isWon = k === "tiger", px = price[k] || 0, d = want[k] - have[k];
+    let act;
+    if (!known) act = `목표 <span class="ord">${want[k].toLocaleString()}주</span>`;
+    else if (d === 0) act = `<span class="mu">그대로 ${want[k].toLocaleString()}주</span>`;
+    else {
+      const lim = px * (d > 0 ? 1.1 : 0.9);
+      act = `<span class="ord" style="color:${d > 0 ? "var(--g)" : "var(--r)"}">${d > 0 ? "사기" : "팔기"} ${Math.abs(d).toLocaleString()}주</span>`
+          + (isWon ? "" : ` <span class="mu">LOC ${usd(lim, 2)}</span>`)
+          + `<div class="mu">${have[k].toLocaleString()} → ${want[k].toLocaleString()}주</div>`;
+    }
+    rows.push(`<div class="row"><span>${names[k]}<div class="mu">${isWon ? won(want[k] * px) : usd(want[k] * px)} · ${isWon ? won(px) : usd(px, 2)}</div></span>
+      <span class="v">${act}</span></div>`);
+  }
+  const extra = [];
+  if (r.isaRest * p.KRW >= 10000) extra.push(`ISA 남는 ${won(r.isaRest * p.KRW)} → 국내 미국채 7~10년 ETF 또는 현금성`);
+  if (r.idleKind === "현금" && r.usIdle >= 1) extra.push(`미국 계좌 현금 ${usd(r.usIdle)}`);
+  if (r.short > 0.005) extra.push(`<span style="color:var(--y)">⚠ 목표 ${pc(S.level)} 중 ${Math.round(r.short * 100)}%p 못 채움 — ISA 금액이 미국 계좌보다 큼</span>`);
+  $("qty").innerHTML = (rows.join("") || `<div class="mu">살 것 없음</div>`) + extra.map(x => `<div class="mu" style="margin-top:4px">${x}</div>`).join("")
+    + `<div class="mu" style="margin-top:6px">합계 ${usd(r.total)} · 환율 ${won(p.KRW)} · 미국 가격 ${day(S.data_last)} 종가</div>`;
+}
+
+async function load() {
+  try {
+    const res = await fetch("status.json?t=" + Date.now(), {cache: "no-store"});
+    if (!res.ok) throw new Error(res.status);
+    S = await res.json();
+    try { localStorage.setItem("slr_status", JSON.stringify(S)); } catch (e) {}
+    render();
+  } catch (e) {
+    let old = null;
+    try { old = JSON.parse(localStorage.getItem("slr_status")); } catch (e2) {}
+    if (old) { S = old; render(); $("meta").innerHTML += ` <span style="color:var(--y)">· 인터넷 연결 없음 — 마지막으로 받은 것</span>`; }
+    else $("app").innerHTML = `<div class="card warn">상태 파일을 받지 못했습니다. 잠시 뒤 ↻</div>`;
+  }
+}
+
+IN.forEach(id => { try { $(id).value = localStorage.getItem("slr_" + id) || ""; } catch (e) {} $(id).addEventListener("input", calc); });
+if (["h_tiger", "h_spy", "h_sso", "h_ief"].some(id => $(id).value)) $("hold").open = true;
+$("reload").onclick = load;
+load();
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+</script>
+</body>
+</html>
