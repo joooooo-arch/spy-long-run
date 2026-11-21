@@ -102,8 +102,8 @@ function render() {
   const s = S;
   const changed = JSON.stringify(s.alloc_new) !== JSON.stringify(s.alloc_old);
   const col = changed ? "var(--y)" : "var(--g)";
-  const basis = s.status === "확정" ? `${day(s.signal)} 미국 종가로 확정`
-    : `<span style="color:var(--y)">예상</span> — ${day(s.data_last)} 종가 기준 (신호일 ${day(s.signal)} 종가 전)`;
+  const basis = s.status === "확정" ? `${day(s.signal)} 미국 종가 기준`
+    : `<span style="color:var(--y)">예상</span> — ${day(s.data_last)} 종가 기준 (주문일 ${day(s.signal)} 마감 전)`;
   const notes = [];
   if (s.early) notes.push(`${day(s.exec)} 13:00 조기 폐장`);
   if (s.skipped.length) notes.push("이번 주 휴장: " + s.skipped.map(day).join(", "));
@@ -115,11 +115,9 @@ function render() {
       ${changed ? `<div style="margin-top:4px">${fa(s.alloc_old)} → <b>${fa(s.alloc_new)}</b></div>` : `<div class="mu">${fa(s.alloc_new)}</div>`}
     </div>
     <div class="card">
-      <div class="row"><span class="k">ISA</span><span class="v"><b>${day(s.exec)} 한국 장중</b> 09:00~15:30<div class="mu">${s.isa_etf.name} (${s.isa_etf.code})</div></span></div>
-      <div class="row"><span class="k">미국 계좌</span><span class="v"><b>${kst(s.open_kst)}</b> 장 시작 전 <b>LOC</b><div class="mu">접수 마감 ${kst(s.cut_kst)} 전</div></span></div>
-      <div class="row"><span class="k">체결</span><span class="v">${day(s.exec)} 미국 장 마감 가격<div class="mu">한국 ${kst(s.close_kst)}</div></span></div>
+      <div class="row"><span class="k">미국 계좌</span><span class="v"><b>미니 PC 자동 주문</b><div class="mu">${day(s.exec)} 마감 약 10분 전 신호 → 그날 장 마감 (한국 ${kst(s.close_kst)})</div></span></div>
+      <div class="row"><span class="k">ISA</span><span class="v"><b>다음 한국 장중</b> 09:00~15:30<div class="mu">${s.isa_etf.name} (${s.isa_etf.code}) · 직접</div></span></div>
       ${notes.map(x => `<div class="warn">⚠ ${x}</div>`).join("")}
-      <div class="mu" style="margin-top:6px">LOC 가격: 살 때 지금가 +10% · 팔 때 −10% 로 넉넉히 → 그날 종가에 체결</div>
     </div>`;
   $("sig").innerHTML = s.signals.map(g => `<div class="row"><span>${g.name} <span class="mu">${g.text}</span></span>
       <span style="color:${g.risk ? "var(--r)" : "var(--g)"};font-weight:600">${g.risk ? "위험" : "정상"}</span></div>`).join("")
@@ -129,7 +127,7 @@ function render() {
     + (s.ladder ? `<br>리바운드형 = 이것과 바닥 사다리 중 큰 쪽. 사다리: 주봉 RSI ${s.ladder.rsi_th} 미만 + 최근 투매 거래량이면 켜짐 → 50% · 20일선 위 100% · 100일선 위 150%` +
        (s.agg !== undefined && s.agg !== s.level ? ` (공격형만이면 ${pc(s.agg)})` : "") : "") + `</div>`;
   $("up").textContent = s.upcoming.length ? "앞으로 일정이 다른 주: " + s.upcoming.map(w =>
-    `${day(w.exec)} 주문` + (w.early ? " (13:00 조기 폐장)" : ` · 신호 ${day(w.signal)}`)).join(" · ") : "";
+    `${day(w.exec)} 주문` + (w.early ? " (13:00 조기 폐장)" : "")).join(" · ") : "";
   const age = (Date.now() - new Date(s.generated)) / 36e5;
   $("meta").innerHTML = `계산 ${kst(s.generated)}` + (age > 72 ? ` <span style="color:var(--y)">· ⚠ ${Math.floor(age / 24)}일 전 것</span>` : "");
   calc();
@@ -156,9 +154,8 @@ function calc() {
     if (!known) act = `목표 <span class="ord">${want[k].toLocaleString()}주</span>`;
     else if (d === 0) act = `<span class="mu">그대로 ${want[k].toLocaleString()}주</span>`;
     else {
-      const lim = px * (d > 0 ? 1.1 : 0.9);
       act = `<span class="ord" style="color:${d > 0 ? "var(--g)" : "var(--r)"}">${d > 0 ? "사기" : "팔기"} ${Math.abs(d).toLocaleString()}주</span>`
-          + (isWon ? "" : ` <span class="mu">LOC ${usd(lim, 2)}</span>`)
+          + (isWon ? "" : ` <span class="mu">자동</span>`)
           + `<div class="mu">${have[k].toLocaleString()} → ${want[k].toLocaleString()}주</div>`;
     }
     rows.push(`<div class="row"><span>${names[k]}<div class="mu">${isWon ? won(want[k] * px) : usd(want[k] * px)} · ${isWon ? won(px) : usd(px, 2)}</div></span>
